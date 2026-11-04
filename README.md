@@ -21,7 +21,7 @@ import as many assets as you like without hitting that limit.
 - **Missing files** show in red and can be removed from the library in one click
 - **Image sequences** detected automatically (`name.1001.exr`, `name_0001.png`)
 - Remembers window size, layout and open folders
-- **Built-in updates** from GitHub that download only the changed files
+- **Automatic update check**: updates from GitHub download only the changed files
 - No extra Python packages: only what ships with Nuke, plus ffmpeg for video thumbnails
 
 ## Requirements
@@ -43,10 +43,13 @@ adds the entry twice. Running it again updates the plugin and keeps your library
 
 ## Updating
 
-Use any of these:
+The first time you open Asset Manager in a Nuke session, it quietly checks
+GitHub in the background. If a newer version exists, a small window offers
+**Update Now**. If you're up to date or offline, nothing appears.
 
-- **Inside Nuke**: **DMB Tools → Asset Manager Updates...**. The Asset Manager
-  window also shows an **Update** button when a new version is on GitHub
+You can also update at any time:
+
+- **Inside Nuke**: **⋯ → Check for Updates...** in the Asset Manager window
 - **Installer**: click **Update from GitHub**
 
 Only the files that changed are downloaded, and files removed from the project

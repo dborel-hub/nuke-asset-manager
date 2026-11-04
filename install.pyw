@@ -7,6 +7,8 @@ Double-click this file (needs Python 3 from python.org - tkinter comes with it).
   Install / Update     copies the "Asset Manager" folder next to this file
                        into ~/.nuke/Asset Manager
   Update from GitHub   downloads ONLY the files that changed on GitHub
+                       (inside Nuke, the plugin also checks GitHub by itself
+                       the first time its window opens each session)
   Download ffmpeg      gets ffmpeg / ffprobe / ffplay into Asset Manager/bin
   Uninstall            removes the plugin and its menu entry
 
@@ -72,16 +74,10 @@ def _asset_manager_open():
     from asset_manager.nuke_integration import show_asset_manager
     show_asset_manager()
 
-def _asset_manager_updates():
-    _asset_manager_load()
-    from asset_manager.nuke_integration import check_for_updates
-    check_for_updates()
-
 try:
     import nuke
     _dmb_tools = nuke.menu('Nuke').addMenu('DMB Tools')
     _dmb_tools.addCommand('Asset Manager', _asset_manager_open)
-    _dmb_tools.addCommand('Asset Manager Updates...', _asset_manager_updates)
     nuke.menu('Nodes').addCommand('DMB Tools/Asset Manager', _asset_manager_open)
 except Exception as _e:
     print('[Asset Manager] menu entry failed: %s' % _e)

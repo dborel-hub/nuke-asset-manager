@@ -91,6 +91,14 @@ def show_asset_manager():
 
     window.show()
     _window = window
+
+    # once per session (the "window already exists" branch above returns early)
+    try:
+        from ..ui.update_dialog import check_for_updates_silently
+        check_for_updates_silently(nuke_main)
+    except Exception as e:
+        log.warning("Update check skipped: %s", e)
+
     return window
 
 

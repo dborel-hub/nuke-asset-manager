@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.1
+
+- Update check is now automatic: the first time the window opens each session, it checks GitHub quietly and only shows a popup when a newer version exists
+- Removed "Asset Manager Updates..." from the Nuke menu (updates are still available from ⋯ → Check for Updates... and from the installer)
+
 ## 1.0.0
 
 - **Updates from GitHub**: only changed files are downloaded and removed files are deleted. Library and ffmpeg are kept

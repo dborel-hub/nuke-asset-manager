@@ -8,7 +8,7 @@ Daniel Marinho Borel - danielmborel@gmail.com
 https://github.com/dborel-hub/nuke-asset-manager
 """
 
-__version__ = "1.0.0"
+__version__ = "1.0.1"
 __author__ = "Daniel Marinho Borel"
 
 # Main module imports
