@@ -21,6 +21,7 @@ import as many assets as you like without hitting that limit.
 - **Missing files** show in red and can be removed from the library in one click
 - **Image sequences** detected automatically (`name.1001.exr`, `name_0001.png`)
 - Remembers window size, layout and open folders
+- **Built-in updates** from GitHub that download only the changed files
 - No extra Python packages: only what ships with Nuke, plus ffmpeg for video thumbnails
 
 ## Requirements
@@ -34,11 +35,23 @@ import as many assets as you like without hitting that limit.
 1. Download this repository: **Code → Download ZIP**, then extract it
 2. Double-click **`install.pyw`**
 3. Check the list, then click **Install / Update**. If ffmpeg is missing, click **Download ffmpeg**
-4. Restart Nuke and open **DMB → Asset Manager**
+4. Restart Nuke and open **DMB Tools → Asset Manager**
 
-The installer copies the `Asset Manager` folder into `~/.nuke/` and adds one
-menu entry to `~/.nuke/menu.py`. It backs up `menu.py` first and never adds the
-entry twice. Running it again updates the plugin and keeps your library.
+The installer copies the `Asset Manager` folder into `~/.nuke/` and adds a
+**DMB Tools** menu to `~/.nuke/menu.py`. It backs up `menu.py` first and never
+adds the entry twice. Running it again updates the plugin and keeps your library.
+
+## Updating
+
+Use any of these:
+
+- **Inside Nuke**: **DMB Tools → Asset Manager Updates...**. The Asset Manager
+  window also shows an **Update** button when a new version is on GitHub
+- **Installer**: click **Update from GitHub**
+
+Only the files that changed are downloaded, and files removed from the project
+are deleted. Your library (`data/`) and ffmpeg (`bin/`) are never touched.
+Restart Nuke after updating.
 
 ### Manual install
 
@@ -59,6 +72,13 @@ your `menu.py`.
 
 To see detailed logs in the Script Editor, set the environment variable
 `ASSET_MANAGER_DEBUG=1` before launching Nuke.
+
+## Author
+
+**Daniel Marinho Borel**, VFX compositor and pipeline developer.
+Contact: [danielmborel@gmail.com](mailto:danielmborel@gmail.com)
+
+Bug reports and ideas are welcome. Open an issue here on GitHub or send an email.
 
 ## License
 

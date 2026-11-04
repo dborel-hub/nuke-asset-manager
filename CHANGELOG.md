@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.1.0
+
+- **Updates from GitHub**: only changed files are downloaded and removed files are deleted. Library and ffmpeg are kept
+  - In Nuke: **DMB Tools → Asset Manager Updates...**
+  - The Asset Manager window shows an **Update** button when a newer version is available. It checks at most every 6 hours
+  - Installer: **Update from GitHub** button, which also works as a fresh install without the ZIP
+- Menu moved to **DMB Tools** in the top menu bar
+- The installer replaces older Asset Manager blocks in `menu.py`, with a backup first
+- The installer shows the version on GitHub next to the installed one
+
 ## 2.0.0
 
 First public release, rebuilt from the original prototype.

@@ -8,7 +8,13 @@ from .log import log
 
 # Application metadata
 APP_NAME = "Asset Manager"
-APP_VERSION = "2.0.0"
+APP_VERSION = "1.0.0"
+AUTHOR = "Daniel Marinho Borel"
+CONTACT = "danielmborel@gmail.com"
+
+# Where updates come from (updater.py / install.pyw read these two lines)
+GITHUB_REPO = "dborel-hub/nuke-asset-manager"
+GITHUB_BRANCH = "main"
 
 # Paths
 NUKE_DIR = os.path.expanduser("~/.nuke")

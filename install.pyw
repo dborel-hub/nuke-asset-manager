@@ -1,18 +1,18 @@
 """
-Asset Manager for Nuke - installer
+Asset Manager for Nuke - installer / updater
+by Daniel Marinho Borel  (danielmborel@gmail.com)
 
 Double-click this file (needs Python 3 from python.org - tkinter comes with it).
 
-What it does:
-  1. Checks what this machine has / is missing
-  2. Copies the "Asset Manager" folder into  ~/.nuke/Asset Manager
-     (on update, your library in data/ and ffmpeg in bin/ are kept)
-  3. Gets ffmpeg / ffprobe / ffplay into Asset Manager/bin if needed
-     (copies them from the system PATH, or downloads them on request)
-  4. Adds the menu entry to ~/.nuke/menu.py - only if it isn't there yet,
-     with a backup of menu.py first
+  Install / Update     copies the "Asset Manager" folder next to this file
+                       into ~/.nuke/Asset Manager
+  Update from GitHub   downloads ONLY the files that changed on GitHub
+  Download ffmpeg      gets ffmpeg / ffprobe / ffplay into Asset Manager/bin
+  Uninstall            removes the plugin and its menu entry
 
-Nothing else in your .nuke folder is touched.
+Always kept: your library (data/) and ffmpeg (bin/).
+menu.py: the "DMB Tools" entry is added once (backup first); an older
+Asset Manager block is replaced. Nothing else in .nuke is touched.
 """
 
 import os
@@ -25,9 +25,13 @@ import zipfile
 import tempfile
 import threading
 import datetime
+import importlib.util
 import urllib.request
 
 APP_NAME = "Asset Manager"
+AUTHOR = "Daniel Marinho Borel"
+CONTACT = "danielmborel@gmail.com"
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 SOURCE = os.path.join(HERE, APP_NAME)
 NUKE_DIR = os.path.join(os.path.expanduser("~"), ".nuke")
@@ -42,11 +46,12 @@ FF_TOOLS = ("ffmpeg", "ffprobe", "ffplay")
 FF_EXE = ".exe" if IS_WINDOWS else ""
 FF_URL = "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip"
 
+# ---------------------------------------------------------------- menu.py block
 BLOCK_START = "# ---- Asset Manager: START (added by install.pyw) ----"
 BLOCK_END = "# ---- Asset Manager: END ----"
 MENU_BLOCK = BLOCK_START + '''
-# Loads ~/.nuke/Asset Manager only when you click the menu item.
-def _asset_manager_open():
+# Asset Manager by Daniel Marinho Borel - loaded only when a menu item is used.
+def _asset_manager_load():
     import os, sys, importlib.util
     if 'asset_manager' not in sys.modules:
         root = os.path.join(os.path.expanduser('~'), '.nuke', 'Asset Manager')
@@ -60,27 +65,43 @@ def _asset_manager_open():
         except Exception:
             del sys.modules['asset_manager']
             raise
+    return sys.modules['asset_manager']
+
+def _asset_manager_open():
+    _asset_manager_load()
     from asset_manager.nuke_integration import show_asset_manager
     show_asset_manager()
 
+def _asset_manager_updates():
+    _asset_manager_load()
+    from asset_manager.nuke_integration import check_for_updates
+    check_for_updates()
+
 try:
     import nuke
-    nuke.menu('Nuke').addCommand('DMB/Asset Manager', _asset_manager_open)
-    nuke.menu('Nodes').addCommand('DMB/Asset Manager', _asset_manager_open)
+    _dmb_tools = nuke.menu('Nuke').addMenu('DMB Tools')
+    _dmb_tools.addCommand('Asset Manager', _asset_manager_open)
+    _dmb_tools.addCommand('Asset Manager Updates...', _asset_manager_updates)
+    nuke.menu('Nodes').addCommand('DMB Tools/Asset Manager', _asset_manager_open)
 except Exception as _e:
     print('[Asset Manager] menu entry failed: %s' % _e)
 ''' + BLOCK_END + "\n"
 
-# A block written by hand before this installer existed (same loader)
-LEGACY_MENU_SIGNS = ("_dmb_open_asset_manager", "_asset_manager_open")
-# The very first version (folder "nuke_asset_manager"), loaded differently
-OLD_VERSION_SIGNS = ("from nuke_integration import add_to_nuke_menu",)
+INSTALLER_BLOCK_RE = re.compile(r"\n*" + re.escape(BLOCK_START) + r".*?" + re.escape(BLOCK_END) + r"\n?", re.S)
+# Blocks pasted by hand before this installer existed - replaced automatically
+LEGACY_BLOCK_RES = [
+    re.compile(r"\n*# =+\n# Asset Manager - \.nuke/Asset Manager/.*?"
+               r"nuke\.menu\('Nodes'\)\.addCommand\('DMB/Asset Manager', _dmb_open_asset_manager\)\n?", re.S),
+    re.compile(r"\n*# ---- Asset Manager ----\n.*?# ---- /Asset Manager ----\n?", re.S),
+]
+LEGACY_SIGNS = ("_dmb_open_asset_manager",)
+OLD_VERSION_SIGNS = ("from nuke_integration import add_to_nuke_menu",)   # very first version
 
 OK, WARN, MISSING, INFO = "ok", "warn", "missing", "info"
 
 
 # ======================================================================
-# Checks (pure functions - no GUI)
+# Helpers
 # ======================================================================
 
 def read_text(path):
@@ -95,13 +116,37 @@ def read_text(path):
     return ""
 
 
+def write_text(path, text):
+    with open(path, "w", encoding="utf-8", newline="") as fh:
+        fh.write(text)
+
+
+def backup_menu(log):
+    if os.path.exists(MENU_PY):
+        stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        backup = MENU_PY + f".backup_{stamp}"
+        shutil.copy2(MENU_PY, backup)
+        log(f"Backup: {backup}")
+
+
 def version_of(folder):
-    m = re.search(r'APP_VERSION\s*=\s*"([^"]+)"', read_text(os.path.join(folder, "config.py")))
+    m = re.search(r'^APP_VERSION\s*=\s*"([^"]+)"', read_text(os.path.join(folder, "config.py")), re.M)
     return m.group(1) if m else None
 
 
+def load_updater():
+    """updater.py from the package next to this file, else the installed one."""
+    for root in (SOURCE, DEST):
+        path = os.path.join(root, "updater.py")
+        if os.path.exists(path):
+            spec = importlib.util.spec_from_file_location("am_updater", path)
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            return mod
+    raise RuntimeError("updater.py not found - extract the whole ZIP")
+
+
 def find_ff(tool):
-    """Path of an ffmpeg tool: installed bin, package bin, or system PATH."""
     for folder in (os.path.join(DEST, "bin"), os.path.join(SOURCE, "bin")):
         p = os.path.join(folder, tool + FF_EXE)
         if os.path.exists(p):
@@ -110,16 +155,30 @@ def find_ff(tool):
 
 
 def menu_state():
-    """'block' (installer block), 'legacy' (hand-made loader), 'old' (first version), or None."""
+    """
+    'current'  installer block, up to date
+    'outdated' installer block from an older version (will be replaced)
+    'legacy'   hand-pasted block (will be replaced)
+    'manual'   hand-made loader we can't safely replace
+    'old'      loader of the very first version
+    None       nothing
+    """
     text = read_text(MENU_PY)
     if BLOCK_START in text:
-        return "block"
-    if any(s in text for s in LEGACY_MENU_SIGNS):
+        m = INSTALLER_BLOCK_RE.search(text)
+        return "current" if m and MENU_BLOCK.strip() in m.group(0) else "outdated"
+    if any(r.search(text) for r in LEGACY_BLOCK_RES):
         return "legacy"
+    if any(s in text for s in LEGACY_SIGNS):
+        return "manual"
     if any(s in text for s in OLD_VERSION_SIGNS):
         return "old"
     return None
 
+
+# ======================================================================
+# Checks
+# ======================================================================
 
 def run_checks():
     """List of (status, title, detail)."""
@@ -129,10 +188,10 @@ def run_checks():
                  f"{v.major}.{v.minor}.{v.micro}" + ("" if v >= (3, 6) else " - needs 3.6+")))
 
     if os.path.exists(os.path.join(SOURCE, "__init__.py")):
-        rows.append((OK, "Plugin files", f"version {version_of(SOURCE) or '?'} next to this installer"))
+        rows.append((OK, "Package", f"version {version_of(SOURCE) or '?'} next to this installer"))
     else:
-        rows.append((MISSING, "Plugin files",
-                     f'"{APP_NAME}" folder not found next to install.pyw - extract the whole ZIP first'))
+        rows.append((WARN, "Package", f'no "{APP_NAME}" folder here - use "Update from GitHub" '
+                                      'or extract the whole ZIP'))
 
     rows.append((OK if os.path.isdir(NUKE_DIR) else INFO, ".nuke folder",
                  NUKE_DIR if os.path.isdir(NUKE_DIR) else f"{NUKE_DIR} (will be created)"))
@@ -144,15 +203,12 @@ def run_checks():
                      else "not found in C:\\Program Files (fine if installed elsewhere)"))
 
     if os.path.exists(os.path.join(DEST, "__init__.py")):
-        installed, new = version_of(DEST), version_of(SOURCE)
-        detail = f"version {installed or '?'} installed"
-        if installed and new and installed != new:
-            detail += f" -> will update to {new}"
+        detail = f"version {version_of(DEST) or '?'} installed"
         if os.path.isdir(os.path.join(DEST, "data")):
-            detail += " (your library in data/ is kept)"
-        rows.append((OK, "Current install", detail))
+            detail += " (library in data/ is kept on update)"
+        rows.append((OK, "Installed", detail))
     else:
-        rows.append((INFO, "Current install", "not installed yet"))
+        rows.append((INFO, "Installed", "not installed yet"))
 
     missing_ff = [t for t in FF_TOOLS if not find_ff(t)]
     if not missing_ff:
@@ -162,42 +218,35 @@ def run_checks():
                      " - video/EXR thumbnails need it (use 'Download ffmpeg')"))
 
     state = menu_state()
-    if state == "block":
-        rows.append((OK, "menu.py", "Asset Manager entry already there"))
-    elif state == "legacy":
-        rows.append((OK, "menu.py", "Asset Manager loader already there (added by hand) - left as is"))
-    elif state == "old":
-        rows.append((WARN, "menu.py", "has the OLD Asset Manager loader - remove that block by hand; "
-                     "the new entry will be added"))
-    else:
-        rows.append((INFO, "menu.py", "entry will be added" + ("" if os.path.exists(MENU_PY)
-                                                             else " (menu.py will be created)")))
+    detail = {
+        "current": (OK, "DMB Tools > Asset Manager entry is there"),
+        "outdated": (INFO, "older Asset Manager entry - will be updated"),
+        "legacy": (INFO, "hand-made Asset Manager block - will be replaced by the DMB Tools entry"),
+        "manual": (WARN, "hand-made Asset Manager loader found - left as is (edit menu.py by hand)"),
+        "old": (WARN, "OLD Asset Manager loader found - remove it by hand; new entry will be added"),
+        None: (INFO, "entry will be added" + ("" if os.path.exists(MENU_PY) else " (menu.py will be created)")),
+    }[state]
+    rows.append((detail[0], "menu.py", detail[1]))
 
     old = os.path.join(NUKE_DIR, "nuke_asset_manager")
     if os.path.isdir(old):
-        rows.append((WARN, "Old version", f"{old} still exists - can be deleted after testing"))
+        rows.append((WARN, "Old version", f"{old} still exists - can be deleted"))
     return rows
 
 
 # ======================================================================
-# Actions (pure functions - log through a callback)
+# Actions
 # ======================================================================
 
 def install_files(log):
     if not os.path.exists(os.path.join(SOURCE, "__init__.py")):
         raise RuntimeError(f'"{APP_NAME}" folder not found next to install.pyw')
     os.makedirs(DEST, exist_ok=True)
-
-    # remove old code (files deleted between versions must go), keep data + bin
-    for name in os.listdir(DEST):
+    for name in os.listdir(DEST):                  # old code out, keep data + bin
         if name in KEEP_ON_UPDATE:
             continue
         path = os.path.join(DEST, name)
-        if os.path.isdir(path):
-            shutil.rmtree(path)
-        else:
-            os.remove(path)
-
+        shutil.rmtree(path) if os.path.isdir(path) else os.remove(path)
     for name in os.listdir(SOURCE):
         if name in SKIP_ON_COPY:
             continue
@@ -206,9 +255,11 @@ def install_files(log):
             shutil.copytree(src, dst, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
         else:
             shutil.copy2(src, dst)
-    log(f"Plugin copied to {DEST}")
+    log(f"Plugin {version_of(DEST) or ''} copied to {DEST}")
+    ensure_ffmpeg_from_system(log)
 
-    # ffmpeg: bundled with the package, or already on the system PATH
+
+def ensure_ffmpeg_from_system(log):
     bin_dir = os.path.join(DEST, "bin")
     os.makedirs(bin_dir, exist_ok=True)
     for tool in FF_TOOLS:
@@ -223,22 +274,30 @@ def install_files(log):
 
 
 def add_menu_entry(log):
-    """Append the menu block once. Backs up menu.py before changing it."""
+    """Make menu.py contain exactly one, current Asset Manager block."""
     state = menu_state()
-    if state in ("block", "legacy"):
-        log("menu.py already has the Asset Manager entry - not changed")
+    if state == "current":
+        log("menu.py: DMB Tools entry already there - not changed")
+        return False
+    if state == "manual":
+        log("menu.py: a hand-made Asset Manager loader exists - not changed (edit by hand)")
         return False
     os.makedirs(NUKE_DIR, exist_ok=True)
     text = read_text(MENU_PY) if os.path.exists(MENU_PY) else ""
-    if os.path.exists(MENU_PY):
-        stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        backup = MENU_PY + f".backup_{stamp}"
-        shutil.copy2(MENU_PY, backup)
-        log(f"Backup: {backup}")
-    sep = "" if (not text or text.endswith("\n\n")) else ("\n" if text.endswith("\n") else "\n\n")
-    with open(MENU_PY, "a", encoding="utf-8") as fh:
-        fh.write(sep + "\n" + MENU_BLOCK)
-    log("Menu entry added to menu.py  (DMB > Asset Manager)")
+    backup_menu(log)
+
+    if state == "outdated":
+        text = INSTALLER_BLOCK_RE.sub("\n", text)
+        log("menu.py: older Asset Manager entry removed")
+    elif state == "legacy":
+        for r in LEGACY_BLOCK_RES:
+            text = r.sub("\n", text)
+        log("menu.py: hand-made Asset Manager block replaced")
+
+    text = text.rstrip("\n")
+    text = (text + "\n\n\n" if text else "") + MENU_BLOCK
+    write_text(MENU_PY, text)
+    log("menu.py: entry added  ->  DMB Tools > Asset Manager")
     if state == "old":
         log("NOTE: menu.py still has the OLD loader block - delete it by hand")
     return True
@@ -247,14 +306,11 @@ def add_menu_entry(log):
 def remove_menu_entry(log):
     text = read_text(MENU_PY)
     if BLOCK_START not in text:
-        log("No installer block in menu.py (a hand-made one, if any, is left alone)")
+        log("No installer block in menu.py")
         return False
-    stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    shutil.copy2(MENU_PY, MENU_PY + f".backup_{stamp}")
-    pattern = re.compile(r"\n*" + re.escape(BLOCK_START) + r".*?" + re.escape(BLOCK_END) + r"\n?", re.S)
-    with open(MENU_PY, "w", encoding="utf-8") as fh:
-        fh.write(pattern.sub("\n", text).rstrip("\n") + "\n")
-    log("Menu entry removed from menu.py (backup saved)")
+    backup_menu(log)
+    write_text(MENU_PY, INSTALLER_BLOCK_RE.sub("\n", text).rstrip("\n") + "\n")
+    log("menu.py: Asset Manager entry removed")
     return True
 
 
@@ -268,7 +324,35 @@ def uninstall(log, keep_library=True):
             shutil.rmtree(path) if os.path.isdir(path) else os.remove(path)
         if not os.listdir(DEST):
             os.rmdir(DEST)
-        log("Plugin removed" + (" (library kept in data/)" if keep_library and os.path.isdir(DEST) else ""))
+        log("Plugin removed" + (" (library kept in data/)" if os.path.isdir(DEST) else ""))
+
+
+def update_from_github(log, progress):
+    """Download only the files that differ from GitHub (also works as a fresh install)."""
+    upd = load_updater()
+    repo, branch = upd.repo_settings(SOURCE, DEST)
+    log(f"Checking github.com/{repo} ({branch}) ...")
+    plan = upd.check(DEST, repo, branch)
+    log(f"Installed: {plan['local_version'] or 'none'}   GitHub: {plan['remote_version'] or '?'}")
+    if not plan["update_available"]:
+        log("Already up to date - nothing to download")
+    else:
+        log(f"{len(plan['changed'])} file(s) to download, {len(plan['removed'])} to remove")
+        for rel in plan["changed"]:
+            log("  + " + rel)
+        for rel in plan["removed"]:
+            log("  - " + rel)
+        upd.apply(DEST, plan, progress=lambda d, t, p: progress(d, t))
+        log("Files updated")
+    ensure_ffmpeg_from_system(log)
+    add_menu_entry(log)
+    return plan
+
+
+def remote_version():
+    upd = load_updater()
+    repo, branch = upd.repo_settings(SOURCE, DEST)
+    return upd.remote_version(repo, branch), repo
 
 
 def download_ffmpeg(log, progress):
@@ -293,8 +377,8 @@ def download_ffmpeg(log, progress):
                 done += len(chunk)
                 progress(done, total)
         log("Extracting...")
+        got = []
         with zipfile.ZipFile(tmp.name) as z:
-            got = []
             for member in z.namelist():
                 base = os.path.basename(member).lower()
                 if "/bin/" in member.replace("\\", "/") and base in [t + ".exe" for t in FF_TOOLS]:
@@ -326,8 +410,8 @@ def run_gui():
     root = tk.Tk()
     root.title("Asset Manager - Installer")
     root.configure(bg=BG)
-    root.geometry("760x600")
-    root.minsize(640, 480)
+    root.geometry("800x640")
+    root.minsize(680, 520)
 
     style = ttk.Style(root)
     try:
@@ -337,8 +421,12 @@ def run_gui():
     style.configure("TProgressbar", troughcolor=PANEL, background=ACCENT, bordercolor=PANEL,
                     lightcolor=ACCENT, darkcolor=ACCENT)
 
-    tk.Label(root, text="Asset Manager for Nuke", bg=BG, fg=FG,
-             font=("Segoe UI", 15, "bold")).pack(anchor="w", padx=18, pady=(16, 0))
+    head = tk.Frame(root, bg=BG)
+    head.pack(fill="x", padx=18, pady=(16, 0))
+    tk.Label(head, text="Asset Manager for Nuke", bg=BG, fg=FG,
+             font=("Segoe UI", 15, "bold")).pack(side="left")
+    tk.Label(head, text=f"{AUTHOR}  \u00b7  {CONTACT}", bg=BG, fg=DIM,
+             font=("Segoe UI", 9)).pack(side="right", pady=(6, 0))
     tk.Label(root, text=f"Installs into {DEST}", bg=BG, fg=DIM,
              font=("Segoe UI", 9)).pack(anchor="w", padx=18)
 
@@ -349,20 +437,21 @@ def run_gui():
     btns.pack(fill="x", padx=18)
 
     def make_button(text, cmd, primary=False):
-        b = tk.Button(btns, text=text, command=cmd, relief="flat", cursor="hand2",
-                      bg=ACCENT if primary else PANEL, fg="#0b1a1f" if primary else FG,
-                      activebackground="#56c4e3" if primary else "#262b33",
-                      activeforeground="#0b1a1f" if primary else FG,
-                      font=("Segoe UI", 10, "bold" if primary else "normal"), padx=14, pady=6, bd=0,
-                      highlightthickness=0)
-        return b
+        return tk.Button(btns, text=text, command=cmd, relief="flat", cursor="hand2",
+                         bg=ACCENT if primary else PANEL, fg="#0b1a1f" if primary else FG,
+                         activebackground="#56c4e3" if primary else "#262b33",
+                         activeforeground="#0b1a1f" if primary else FG,
+                         font=("Segoe UI", 10, "bold" if primary else "normal"),
+                         padx=14, pady=6, bd=0, highlightthickness=0)
 
     install_btn = make_button("Install / Update", lambda: start(do_install), primary=True)
+    github_btn = make_button("Update from GitHub", lambda: start(do_github))
     ff_btn = make_button("Download ffmpeg", lambda: start(do_download))
     uninstall_btn = make_button("Uninstall", lambda: confirm_uninstall())
     close_btn = make_button("Close", root.destroy)
     install_btn.pack(side="left")
-    ff_btn.pack(side="left", padx=8)
+    github_btn.pack(side="left", padx=8)
+    ff_btn.pack(side="left")
     close_btn.pack(side="right")
     uninstall_btn.pack(side="right", padx=8)
 
@@ -374,7 +463,7 @@ def run_gui():
     log_box.pack(fill="both", expand=True, padx=18, pady=12)
 
     events = queue.Queue()
-    busy = {"on": False}
+    state = {"busy": False, "remote": None}
 
     def log(msg):
         events.put(("log", msg))
@@ -386,19 +475,31 @@ def run_gui():
         for w in checks_frame.winfo_children():
             w.destroy()
         rows = run_checks()
+        remote = state["remote"]
+        if remote:
+            installed = version_of(DEST)
+            newer = installed and remote[0] and _vt(remote[0]) > _vt(installed)
+            rows.insert(5, (WARN if newer else OK, "GitHub",
+                            f"version {remote[0] or '?'} on github.com/{remote[1]}"
+                            + ("  - newer, use 'Update from GitHub'" if newer else "")))
         for status, title, detail in rows:
             row = tk.Frame(checks_frame, bg=PANEL)
             row.pack(fill="x", padx=10, pady=3)
             tk.Label(row, text=ICONS[status], width=2, bg=PANEL, fg=COLORS[status],
                      font=("Segoe UI", 11, "bold")).pack(side="left")
-            tk.Label(row, text=title, width=15, anchor="w", bg=PANEL, fg=FG,
+            tk.Label(row, text=title, width=12, anchor="w", bg=PANEL, fg=FG,
                      font=("Segoe UI", 10, "bold")).pack(side="left")
             tk.Label(row, text=detail, anchor="w", justify="left", bg=PANEL, fg=DIM,
-                     font=("Segoe UI", 9), wraplength=480).pack(side="left", fill="x", expand=True)
+                     font=("Segoe UI", 9), wraplength=540).pack(side="left", fill="x", expand=True)
         ff_missing = any(t[1] == "ffmpeg" and t[0] != OK for t in rows)
-        plugin_ok = any(t[1] == "Plugin files" and t[0] == OK for t in rows)
-        install_btn.configure(state="normal" if plugin_ok and not busy["on"] else "disabled")
-        ff_btn.configure(state="normal" if ff_missing and IS_WINDOWS and not busy["on"] else "disabled")
+        package_ok = os.path.exists(os.path.join(SOURCE, "__init__.py"))
+        idle = not state["busy"]
+        install_btn.configure(state="normal" if package_ok and idle else "disabled")
+        github_btn.configure(state="normal" if idle else "disabled")
+        ff_btn.configure(state="normal" if ff_missing and IS_WINDOWS and idle else "disabled")
+
+    def _vt(v):
+        return tuple(int(x) for x in re.findall(r"\d+", v or "0"))
 
     def pump():
         try:
@@ -414,8 +515,11 @@ def run_gui():
                     else:
                         bar.configure(mode="indeterminate")
                         bar.step(5)
+                elif kind == "remote":
+                    state["remote"] = payload
+                    refresh_checks()
                 elif kind == "done":
-                    busy["on"] = False
+                    state["busy"] = False
                     bar.configure(mode="determinate", value=0)
                     refresh_checks()
                     if payload:
@@ -425,11 +529,11 @@ def run_gui():
         root.after(80, pump)
 
     def start(job):
-        if busy["on"]:
+        if state["busy"]:
             return
-        busy["on"] = True
-        install_btn.configure(state="disabled")
-        ff_btn.configure(state="disabled")
+        state["busy"] = True
+        for b in (install_btn, github_btn, ff_btn):
+            b.configure(state="disabled")
 
         def runner():
             message = None
@@ -442,23 +546,29 @@ def run_gui():
         threading.Thread(target=runner, daemon=True).start()
 
     def do_install():
-        log("---- Install / Update ----")
+        log("---- Install / Update (from this folder) ----")
         install_files(log)
         add_menu_entry(log)
         missing = [t for t in FF_TOOLS if not find_ff(t)]
         if missing:
-            log("ffmpeg still missing: " + ", ".join(missing) + " - click 'Download ffmpeg' "
-                "(or copy the .exe files into Asset Manager\\bin)")
-        log("Done. Restart Nuke, then open:  DMB > Asset Manager")
-        return "Installed.\n\nRestart Nuke and open  DMB > Asset Manager."
+            log("ffmpeg still missing: " + ", ".join(missing) + " - click 'Download ffmpeg'")
+        log("Done. Restart Nuke, then open:  DMB Tools > Asset Manager")
+        return "Installed.\n\nRestart Nuke and open  DMB Tools > Asset Manager."
+
+    def do_github():
+        log("---- Update from GitHub ----")
+        plan = update_from_github(log, progress)
+        if plan["update_available"]:
+            log("Done. Restart Nuke to load the new version.")
+            return f"Updated to {plan['remote_version'] or 'the latest version'}.\n\nRestart Nuke."
+        return None
 
     def do_download():
         log("---- Download ffmpeg ----")
         download_ffmpeg(log, progress)
-        return None
 
     def confirm_uninstall():
-        if busy["on"]:
+        if state["busy"]:
             return
         answer = messagebox.askyesnocancel(
             "Uninstall Asset Manager",
@@ -466,13 +576,22 @@ def run_gui():
             "Yes = keep your library (data folder)\nNo = remove everything\nCancel = do nothing")
         if answer is None:
             return
-        start(lambda: (log("---- Uninstall ----"), uninstall(log, keep_library=answer),
-                       "Uninstalled. Restart Nuke.")[-1])
+
+        def job():
+            log("---- Uninstall ----")
+            uninstall(log, keep_library=answer)
+            return "Uninstalled. Restart Nuke."
+        start(job)
+
+    def fetch_remote():
+        try:
+            events.put(("remote", remote_version()))
+        except Exception as e:
+            log(f"GitHub not reachable right now ({e})")
 
     refresh_checks()
     log("Checked this machine - see the list above.")
-    if not os.path.exists(os.path.join(SOURCE, "__init__.py")):
-        log(f'"{APP_NAME}" folder missing next to install.pyw: extract the whole ZIP first.')
+    threading.Thread(target=fetch_remote, daemon=True).start()
     pump()
     root.mainloop()
 

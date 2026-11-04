@@ -1,0 +1,14 @@
+# Personal library (database with your file paths, thumbnails, settings)
+Asset Manager/data/
+
+# ffmpeg binaries: large, downloaded by install.pyw
+Asset Manager/bin/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# OS files
+Thumbs.db
+desktop.ini
+.DS_Store

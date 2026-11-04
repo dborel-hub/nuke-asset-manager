@@ -15,3 +15,12 @@ __all__ = [
     'create_node_from_asset',
     'create_nodes_from_assets',
 ]
+
+
+def check_for_updates():
+    """Menu entry: DMB Tools > Check for Updates..."""
+    from ..ui.update_dialog import show_update_dialog
+    return show_update_dialog()
+
+
+__all__.append('check_for_updates')
