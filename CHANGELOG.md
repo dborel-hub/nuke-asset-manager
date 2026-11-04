@@ -1,6 +1,6 @@
 # Changelog
 
-## 2.1.0
+## 1.0.0
 
 - **Updates from GitHub**: only changed files are downloaded and removed files are deleted. Library and ffmpeg are kept
   - In Nuke: **DMB Tools → Asset Manager Updates...**
@@ -9,11 +9,6 @@
 - Menu moved to **DMB Tools** in the top menu bar
 - The installer replaces older Asset Manager blocks in `menu.py`, with a backup first
 - The installer shows the version on GitHub next to the installed one
-
-## 2.0.0
-
-First public release, rebuilt from the original prototype.
-
 - Nodes are created through TCL, so the plugin works on Nuke Indie without hitting the Python node limit
 - The plugin loads only when its menu item is clicked, so Nuke starts with no extra cost
 - New interface: sidebar with a folder tree, card grid, list view, one-line info bar
