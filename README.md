@@ -56,6 +56,10 @@ Only the files that changed are downloaded, and files removed from the project
 are deleted. Your library (`data/`) and ffmpeg (`bin/`) are never touched.
 Restart Nuke after updating.
 
+Menu changes arrive with updates too: if your `menu.py` has an Asset Manager
+entry from an older version, the plugin replaces it by itself (with a backup)
+and asks you to restart Nuke.
+
 ### Manual install
 
 Copy the `Asset Manager` folder into `C:\Users\<you>\.nuke\`, put `ffmpeg.exe`,

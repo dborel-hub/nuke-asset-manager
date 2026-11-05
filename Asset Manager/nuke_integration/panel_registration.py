@@ -30,6 +30,26 @@ _drop_callback_installed = False
 # Window
 # ------------------------------------------------------------------
 
+def _refresh_menu_entry(parent):
+    """
+    Replace an outdated Asset Manager block in ~/.nuke/menu.py (left by an
+    older version) with the current one, so menu changes arrive with a normal
+    update. Backs up menu.py first. Never adds a block that isn't there and
+    never touches a hand-made loader.
+    """
+    try:
+        from .. import menu_block
+        fixed = menu_block.ensure(log=log.debug, allow_add=False)
+    except Exception as e:
+        log.warning("Could not check the menu.py entry: %s", e)
+        return
+    if fixed:
+        QtWidgets.QMessageBox.information(
+            parent, "Asset Manager",
+            "The Asset Manager menu entry was updated to the current version.\n\n"
+            "Restart Nuke to see the change.\n(A backup of menu.py was saved.)")
+
+
 class AssetManagerWindow(QtWidgets.QMainWindow):
     """Main window: remembers size/position and panel layout on close."""
 
@@ -93,6 +113,7 @@ def show_asset_manager():
     _window = window
 
     # once per session (the "window already exists" branch above returns early)
+    _refresh_menu_entry(nuke_main)
     try:
         from ..ui.update_dialog import check_for_updates_silently
         check_for_updates_silently(nuke_main)

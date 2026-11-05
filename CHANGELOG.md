@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.2
+
+- The plugin now fixes its own entry in `menu.py`: if an older version left an outdated Asset Manager block, it is replaced the first time the window opens (backup first), and a message asks you to restart Nuke. Menu changes now arrive with a normal update, without running the installer again
+- The menu block is defined in one place (`Asset Manager/menu_block.py`), shared by the plugin and `install.pyw`
+- `menu.py` backups: a single `menu.py.asset_manager_backup` file is kept and overwritten on each change. Old `menu.py.backup_<date>` copies piling up from earlier versions are cleaned, keeping only the newest one
+- A block that uses the Asset Manager markers but belongs to another plugin is never touched
+- After changing `menu.py`, the plugin reads it back; if the change didn't stick, it stops instead of retrying every session
+
 ## 1.0.1
 
 - Update check is now automatic: the first time the window opens each session, it checks GitHub quietly and only shows a popup when a newer version exists
@@ -7,13 +15,8 @@
 
 ## 1.0.0
 
-- **Updates from GitHub**: only changed files are downloaded and removed files are deleted. Library and ffmpeg are kept
-  - In Nuke: **DMB Tools → Asset Manager Updates...**
-  - The Asset Manager window shows an **Update** button when a newer version is available. It checks at most every 6 hours
-  - Installer: **Update from GitHub** button, which also works as a fresh install without the ZIP
-- Menu moved to **DMB Tools** in the top menu bar
-- The installer replaces older Asset Manager blocks in `menu.py`, with a backup first
-- The installer shows the version on GitHub next to the installed one
+First public release.
+
 - Nodes are created through TCL, so the plugin works on Nuke Indie without hitting the Python node limit
 - The plugin loads only when its menu item is clicked, so Nuke starts with no extra cost
 - New interface: sidebar with a folder tree, card grid, list view, one-line info bar
@@ -29,3 +32,10 @@
 - Fixed: drag and drop no longer captures every file dropped into Nuke
 - Quiet log: set `ASSET_MANAGER_DEBUG=1` for details
 - `install.pyw` checks the machine, installs or updates, downloads ffmpeg and adds the menu entry once
+- **Updates from GitHub**: only changed files are downloaded and removed files are deleted. Library and ffmpeg are kept
+  - In Nuke: **DMB Tools → Asset Manager Updates...**
+  - The Asset Manager window shows an **Update** button when a newer version is available. It checks at most every 6 hours
+  - Installer: **Update from GitHub** button, which also works as a fresh install without the ZIP
+- Menu moved to **DMB Tools** in the top menu bar
+- The installer replaces older Asset Manager blocks in `menu.py`, with a backup first
+- The installer shows the version on GitHub next to the installed one

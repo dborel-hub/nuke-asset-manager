@@ -64,6 +64,7 @@ class AssetManagerPanel(QtWidgets.QWidget):
         self._restore_state()
         self._reload_all()
         self.library.generate_all_thumbnails()
+        self._check_updates_quietly()
         if not self.library.thumbnail_gen.has_ffmpeg():
             self._set_status("ffmpeg not found: video/EXR thumbnails off "
                              "(put ffmpeg.exe + ffprobe.exe in Asset Manager/bin)", 0)
@@ -151,6 +152,15 @@ class AssetManagerPanel(QtWidgets.QWidget):
         self.count_label.setMinimumWidth(70)
         self.count_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         lay.addWidget(self.count_label)
+
+        # hidden until GitHub has a newer version
+        self.update_btn = QtWidgets.QPushButton("")
+        self.update_btn.setObjectName("amAddButton")
+        self.update_btn.setCursor(Qt.PointingHandCursor)
+        self.update_btn.setToolTip("A new version is on GitHub - click to update")
+        self.update_btn.hide()
+        self.update_btn.clicked.connect(self._open_updates)
+        lay.addWidget(self.update_btn)
 
         self.more_btn = self._tool_button("⋯", "More")
         self.more_btn.setPopupMode(QtWidgets.QToolButton.InstantPopup)
@@ -260,6 +270,32 @@ class AssetManagerPanel(QtWidgets.QWidget):
         cfg.save_config()
 
     # ================================================================ updates
+    UPDATE_CHECK_INTERVAL = 6 * 3600   # seconds between quiet checks
+
+    def _check_updates_quietly(self):
+        import time
+        from .update_dialog import UpdateNotifier
+        cfg = self.library.config
+        if time.time() - float(cfg.get('last_update_check', 0) or 0) < self.UPDATE_CHECK_INTERVAL:
+            pending = cfg.get('update_available_version')
+            if pending:
+                self._show_update_button(pending)
+            return
+        cfg.set('last_update_check', time.time())
+        self._notifier = UpdateNotifier(self)
+        self._notifier.available.connect(self._show_update_button)
+        self._notifier.check()
+
+    def _show_update_button(self, version):
+        from ..updater import version_tuple
+        from ..config import APP_VERSION
+        if version_tuple(version) <= version_tuple(APP_VERSION):
+            self.library.config.set('update_available_version', None)
+            return
+        self.library.config.set('update_available_version', version)
+        self.update_btn.setText(f"⬆  Update {version}")
+        self.update_btn.show()
+
     def _open_updates(self):
         from .update_dialog import show_update_dialog
         show_update_dialog(self.window())

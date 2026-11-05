@@ -8,7 +8,7 @@ from .log import log
 
 # Application metadata
 APP_NAME = "Asset Manager"
-APP_VERSION = "1.0.1"
+APP_VERSION = "1.0.2"
 AUTHOR = "Daniel Marinho Borel"
 CONTACT = "danielmborel@gmail.com"
 

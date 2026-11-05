@@ -15,6 +15,7 @@ Double-click this file (needs Python 3 from python.org - tkinter comes with it).
 Always kept: your library (data/) and ffmpeg (bin/).
 menu.py: the "DMB Tools" entry is added once (backup first); an older
 Asset Manager block is replaced. Nothing else in .nuke is touched.
+(The block is defined in "Asset Manager/menu_block.py".)
 """
 
 import os
@@ -49,49 +50,8 @@ FF_EXE = ".exe" if IS_WINDOWS else ""
 FF_URL = "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip"
 
 # ---------------------------------------------------------------- menu.py block
-BLOCK_START = "# ---- Asset Manager: START (added by install.pyw) ----"
-BLOCK_END = "# ---- Asset Manager: END ----"
-MENU_BLOCK = BLOCK_START + '''
-# Asset Manager by Daniel Marinho Borel - loaded only when a menu item is used.
-def _asset_manager_load():
-    import os, sys, importlib.util
-    if 'asset_manager' not in sys.modules:
-        root = os.path.join(os.path.expanduser('~'), '.nuke', 'Asset Manager')
-        spec = importlib.util.spec_from_file_location(
-            'asset_manager', os.path.join(root, '__init__.py'),
-            submodule_search_locations=[root])
-        module = importlib.util.module_from_spec(spec)
-        sys.modules['asset_manager'] = module
-        try:
-            spec.loader.exec_module(module)
-        except Exception:
-            del sys.modules['asset_manager']
-            raise
-    return sys.modules['asset_manager']
-
-def _asset_manager_open():
-    _asset_manager_load()
-    from asset_manager.nuke_integration import show_asset_manager
-    show_asset_manager()
-
-try:
-    import nuke
-    _dmb_tools = nuke.menu('Nuke').addMenu('DMB Tools')
-    _dmb_tools.addCommand('Asset Manager', _asset_manager_open)
-    nuke.menu('Nodes').addCommand('DMB Tools/Asset Manager', _asset_manager_open)
-except Exception as _e:
-    print('[Asset Manager] menu entry failed: %s' % _e)
-''' + BLOCK_END + "\n"
-
-INSTALLER_BLOCK_RE = re.compile(r"\n*" + re.escape(BLOCK_START) + r".*?" + re.escape(BLOCK_END) + r"\n?", re.S)
-# Blocks pasted by hand before this installer existed - replaced automatically
-LEGACY_BLOCK_RES = [
-    re.compile(r"\n*# =+\n# Asset Manager - \.nuke/Asset Manager/.*?"
-               r"nuke\.menu\('Nodes'\)\.addCommand\('DMB/Asset Manager', _dmb_open_asset_manager\)\n?", re.S),
-    re.compile(r"\n*# ---- Asset Manager ----\n.*?# ---- /Asset Manager ----\n?", re.S),
-]
-LEGACY_SIGNS = ("_dmb_open_asset_manager",)
-OLD_VERSION_SIGNS = ("from nuke_integration import add_to_nuke_menu",)   # very first version
+# The block itself lives in "Asset Manager/menu_block.py" (single source of
+# truth, also used by the plugin to fix an outdated block by itself).
 
 OK, WARN, MISSING, INFO = "ok", "warn", "missing", "info"
 
@@ -110,19 +70,6 @@ def read_text(path):
         except OSError:
             return ""
     return ""
-
-
-def write_text(path, text):
-    with open(path, "w", encoding="utf-8", newline="") as fh:
-        fh.write(text)
-
-
-def backup_menu(log):
-    if os.path.exists(MENU_PY):
-        stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        backup = MENU_PY + f".backup_{stamp}"
-        shutil.copy2(MENU_PY, backup)
-        log(f"Backup: {backup}")
 
 
 def version_of(folder):
@@ -150,26 +97,22 @@ def find_ff(tool):
     return shutil.which(tool)
 
 
-def menu_state():
-    """
-    'current'  installer block, up to date
-    'outdated' installer block from an older version (will be replaced)
-    'legacy'   hand-pasted block (will be replaced)
-    'manual'   hand-made loader we can't safely replace
-    'old'      loader of the very first version
-    None       nothing
-    """
-    text = read_text(MENU_PY)
-    if BLOCK_START in text:
-        m = INSTALLER_BLOCK_RE.search(text)
-        return "current" if m and MENU_BLOCK.strip() in m.group(0) else "outdated"
-    if any(r.search(text) for r in LEGACY_BLOCK_RES):
-        return "legacy"
-    if any(s in text for s in LEGACY_SIGNS):
-        return "manual"
-    if any(s in text for s in OLD_VERSION_SIGNS):
-        return "old"
+def load_menu_block():
+    """menu_block.py from the package next to this file, else the installed one."""
+    for root in (SOURCE, DEST):
+        path = os.path.join(root, "menu_block.py")
+        if os.path.exists(path):
+            spec = importlib.util.spec_from_file_location("am_menu_block", path)
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            return mod
     return None
+
+
+def menu_state():
+    """'current' / 'outdated' / 'legacy' / 'manual' / 'old' / None  (see menu_block.state)"""
+    mb = load_menu_block()
+    return mb.state(read_text(MENU_PY)) if mb else None
 
 
 # ======================================================================
@@ -219,6 +162,8 @@ def run_checks():
         "outdated": (INFO, "older Asset Manager entry - will be updated"),
         "legacy": (INFO, "hand-made Asset Manager block - will be replaced by the DMB Tools entry"),
         "manual": (WARN, "hand-made Asset Manager loader found - left as is (edit menu.py by hand)"),
+        "foreign": (WARN, "another plugin uses the 'Asset Manager' markers - left as is "
+                          "(give that plugin its own START/END markers)"),
         "old": (WARN, "OLD Asset Manager loader found - remove it by hand; new entry will be added"),
         None: (INFO, "entry will be added" + ("" if os.path.exists(MENU_PY) else " (menu.py will be created)")),
     }[state]
@@ -271,43 +216,18 @@ def ensure_ffmpeg_from_system(log):
 
 def add_menu_entry(log):
     """Make menu.py contain exactly one, current Asset Manager block."""
-    state = menu_state()
-    if state == "current":
-        log("menu.py: DMB Tools entry already there - not changed")
-        return False
-    if state == "manual":
-        log("menu.py: a hand-made Asset Manager loader exists - not changed (edit by hand)")
-        return False
-    os.makedirs(NUKE_DIR, exist_ok=True)
-    text = read_text(MENU_PY) if os.path.exists(MENU_PY) else ""
-    backup_menu(log)
-
-    if state == "outdated":
-        text = INSTALLER_BLOCK_RE.sub("\n", text)
-        log("menu.py: older Asset Manager entry removed")
-    elif state == "legacy":
-        for r in LEGACY_BLOCK_RES:
-            text = r.sub("\n", text)
-        log("menu.py: hand-made Asset Manager block replaced")
-
-    text = text.rstrip("\n")
-    text = (text + "\n\n\n" if text else "") + MENU_BLOCK
-    write_text(MENU_PY, text)
-    log("menu.py: entry added  ->  DMB Tools > Asset Manager")
-    if state == "old":
-        log("NOTE: menu.py still has the OLD loader block - delete it by hand")
-    return True
+    mb = load_menu_block()
+    if mb is None:
+        raise RuntimeError("menu_block.py not found - extract the whole ZIP")
+    return bool(mb.ensure(MENU_PY, log, allow_add=True))
 
 
 def remove_menu_entry(log):
-    text = read_text(MENU_PY)
-    if BLOCK_START not in text:
-        log("No installer block in menu.py")
+    mb = load_menu_block()
+    if mb is None:
+        log("menu_block.py not found - menu.py not changed")
         return False
-    backup_menu(log)
-    write_text(MENU_PY, INSTALLER_BLOCK_RE.sub("\n", text).rstrip("\n") + "\n")
-    log("menu.py: Asset Manager entry removed")
-    return True
+    return mb.remove(MENU_PY, log)
 
 
 def uninstall(log, keep_library=True):
